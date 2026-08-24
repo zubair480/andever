@@ -79,7 +79,15 @@ async def static(request):
 # ---------------------------------------------------------------------------
 
 async def meta(request):
-    return _json(server.meta())
+    """Panel and axis catalogue, plus whether this instance is shared.
+
+    The interface uses `shared` to drop the agent-to-browser mirroring, which
+    only makes sense when one person owns the process.
+    """
+    payload = server.meta()
+    payload["shared"] = mcp_app.SHARED
+    payload["max_iterations"] = mcp_app.MAX_ITERATIONS
+    return _json(payload)
 
 
 async def connection(request):

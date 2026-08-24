@@ -29,7 +29,14 @@ from mcp.server.fastmcp import FastMCP
 from . import evidence, panels, session
 
 SERVER_NAME = "longevity-loop"
-HOSTED = os.environ.get("LONGEVITY_LOOP_HOSTED") == "1"
+# A public instance must not keep a pending profile in module state: there is
+# one process, so two people using it at the same time would share it and one
+# could run the loop against the other's health data. SHARED switches the MCP
+# surface to a single tool that takes the whole profile per call and keeps
+# nothing. HOSTED is the older name for the same switch.
+SHARED = (os.environ.get("LONGEVITY_LOOP_SHARED") == "1"
+          or os.environ.get("LONGEVITY_LOOP_HOSTED") == "1")
+HOSTED = SHARED
 
 MAX_ITERATIONS = 14 if HOSTED else 30
 DEFAULT_ITERATIONS = 10 if HOSTED else 12

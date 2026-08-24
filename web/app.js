@@ -77,11 +77,20 @@ async function boot() {
     renderModal();
   } catch (err) { /* modal falls back to a message */ }
 
-  if (state.hosted) {
+  if (state.hosted || state.meta?.shared) {
     applyHostedMode();
   } else {
+    // Poll only while the tab is actually being looked at. A hidden tab left
+    // open otherwise pings the server 24 times a minute forever, which on a
+    // free instance both prevents it ever sleeping and burns the monthly
+    // instance-hour budget for nobody's benefit.
     pollConnection();
-    setInterval(pollConnection, 2500);
+    setInterval(() => {
+      if (document.visibilityState === "visible") pollConnection();
+    }, 2500);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") pollConnection();
+    });
   }
 }
 
