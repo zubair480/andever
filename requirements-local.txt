@@ -1,0 +1,27 @@
+# Full local install: everything real, nothing stubbed.
+#
+# biolearn declares ecos, which has no Python 3.13 wheel and needs a C++
+# toolchain to build. biolearn never imports it, so install without deps first:
+#
+#   pip install --no-deps biolearn
+#   pip install -r requirements-local.txt
+
+biolearn>=0.9.1
+appdirs
+cvxpy
+matplotlib
+numpy>=1.19.0
+openpyxl
+pandas>=2.1.0
+pyyaml
+requests
+scikit-learn
+scipy
+torch          # biolearn imports it at module load for AltumAge
+xlrd
+
+# MCP server, so Claude Code or Codex can drive the loop.
+mcp>=1.27.0
+
+# Optional: only needed for the Claude-backed hypothesis agent.
+anthropic>=0.107.0

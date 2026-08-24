@@ -1,0 +1,134 @@
+# Render Blueprint for the Longevity AI Loop, free instance.
+#
+# Schema reference: https://render.com/docs/blueprint-spec
+# Field names here follow the current spec, not the older one: `runtime`
+# replaced `env`, and `autoDeployTrigger` replaced the boolean `autoDeploy`.
+# Both old spellings still parse today but are documented as deprecated, so
+# this file uses the current ones.
+#
+# What this buys over the Docker build: Render's native Python runtime skips
+# the image build entirely, which on a free instance is the difference between
+# a build that finishes and a build that runs out of memory installing torch.
+# The dependency set below is the pure-numpy one, so there is nothing to
+# compile and nothing that needs a gigabyte of RAM to unpack.
+
+services:
+  - type: web
+    name: longevity-loop
+
+    # Native Python runtime. `docker` would work too and the Dockerfile in this
+    # repo is a valid one, but the image it builds carries torch and scipy and
+    # is far too large for a free instance to build or hold in 512 MB.
+    runtime: python
+
+    plan: free
+
+    # Oregon is Render's default region and free instances are offered there.
+    # Change it only if latency to somewhere else matters more than that.
+    region: oregon
+
+    # `branch` is deliberately absent so Render uses whatever the connected
+    # repo's default branch is. Pinning it to `main` here breaks silently on a
+    # repo that still calls it `master`.
+    autoDeployTrigger: commit
+
+    buildCommand: pip install -r requirements.txt
+
+    # Why uvicorn against the module-level ASGI object rather than
+    # `python serve_single_port.py`:
+    #
+    #   - serve_single_port.py exposes `app` at module scope, so uvicorn can
+    #     own the process and the signal handling. Render sends SIGTERM on
+    #     spin-down and redeploy, and uvicorn's own shutdown path drains
+    #     in-flight responses instead of dropping them mid-stream.
+    #   - its main() would also run looprunner.bootstrap() before binding.
+    #     That warm-up reads the reference epigenome off disk, which is fine
+    #     locally but on a free instance it is dead time added to a cold start
+    #     that is already about a minute. The panel loads lazily on first use
+    #     either way.
+    #
+    # $PORT is expanded by the shell Render runs this in. Render assigns the
+    # port; hardcoding one gets the service marked unhealthy.
+    #
+    # --workers 1 is not the default being restated for decoration. This app's
+    # session state, the run registry and the SQLite handle all live in module
+    # globals in one process, so a second worker would serve a browser tab that
+    # cannot see the run an MCP client just started. One worker is a
+    # correctness requirement here, not a free-tier concession.
+    #
+    # --timeout-keep-alive 75 raises uvicorn's 5 second idle-connection close.
+    # Render's proxy pools upstream connections and reuses them; when the
+    # origin closes one out from under a reused request you get sporadic 502s
+    # that look like application errors and are not. Sitting above the proxy's
+    # own idle window makes the proxy the side that closes.
+    startCommand: uvicorn serve_single_port:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 75
+
+    # /api/connection returns session.snapshot(), which is a copy of one
+    # in-process dict. No SQLite, no biolearn import, no panel load, no run.
+    # /api/meta would have been the obvious choice and is the wrong one: it
+    # calls looprunner.reference_info() and walks the panel tables, so health
+    # checks would repeatedly pay for work the loop is supposed to pay for.
+    # / is also wrong, since it is a file read that says nothing about whether
+    # the ASGI app came up.
+    healthCheckPath: /api/connection
+
+    envVars:
+      # Render's native Python default moved to 3.14 in February 2026. Pin
+      # something with settled wheels for numpy and pandas so a deploy does not
+      # start compiling from source inside a 512 MB box. Bump this once the
+      # dependency set has 3.13/3.14 wheels you have actually tested.
+      - key: PYTHON_VERSION
+        value: 3.12.11
+
+      # loopcore/store.py resolves its SQLite file and the exported DPO/SFT
+      # datasets under this path, defaulting to `runtime/` next to the package.
+      # Free instances have no persistent disk and the filesystem is ephemeral,
+      # so pointing it at /tmp is both the writable choice and an honest
+      # statement of what it is: scratch space that dies with the process.
+      # Nothing here survives a spin-down, a redeploy or a restart.
+      - key: LONGEVITY_LOOP_RUNTIME
+        value: /tmp/longevity-runtime
+
+      # Same reasoning, for the two caches that get created on first use by
+      # appdirs and matplotlib. Neither is on the hot path, but a library
+      # creating a cache directory in a read-only HOME fails the request that
+      # happened to trigger it rather than failing at boot.
+      - key: XDG_CACHE_HOME
+        value: /tmp/cache
+      - key: MPLCONFIGDIR
+        value: /tmp/matplotlib
+
+      # A free instance is 0.1 vCPU. loopcore/compat.py defaults
+      # OMP_NUM_THREADS to 4, which on a tenth of a core means four threads
+      # fighting over one, and BLAS thread pools that cost more to spin up than
+      # the dot products they run. One thread is faster here.
+      - key: OMP_NUM_THREADS
+        value: "1"
+
+      # Render captures stdout and stderr into the service log. Without this,
+      # Python buffers and the log arrives in bursts long after the event, which
+      # makes a cold-start failure very hard to read.
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+      # Build-time noise reduction. Neither changes behaviour; both make the
+      # build log short enough to scan.
+      - key: PIP_DISABLE_PIP_VERSION_CHECK
+        value: "1"
+      - key: PIP_NO_CACHE_DIR
+        value: "1"
+
+      # LONGEVITY_LOOP_PUBLIC_URL is intentionally not set here. loopcore's MCP
+      # tools use it when they tell an agent where the interface lives, and the
+      # value is the service's public URL, which does not exist until Render has
+      # created the service. The web page does not need it: /api/mcp-setup in
+      # serve_single_port.py derives the origin from the X-Forwarded-Host and
+      # X-Forwarded-Proto headers the proxy sends. Set it by hand in the
+      # dashboard after the first deploy if you want the MCP tool text to name
+      # the public URL too. DEPLOY_RENDER.md says where.
+      #
+      # ANTHROPIC_API_KEY is also intentionally absent. It is optional, it is a
+      # secret, and secrets do not belong in a file that lives in the repo. Add
+      # it in the dashboard, or as `- key: ANTHROPIC_API_KEY` with
+      # `sync: false`, which makes Render prompt for the value instead of
+      # storing it here.

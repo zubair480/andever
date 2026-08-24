@@ -1,0 +1,32 @@
+# Local run artefacts. The service writes its SQLite store and the exported
+# DPO/SFT files to LONGEVITY_LOOP_RUNTIME, which points at /tmp on Render, so
+# nothing here belongs in the repo.
+runtime/
+*.db
+*.jsonl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# The Vercel build is not part of this deployment.
+.vercel/
+
+# Secrets never belong in the repo. ANTHROPIC_API_KEY is set as a Render
+# environment variable when the Claude hypothesis agent is wanted.
+.env
+.env.*
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# NOTE: loopcore/precomputed/ IS committed on purpose. The fitted reference
+# epigenome and the distilled panel are what let the service boot in under a
+# second with no biolearn and no GEO download. They are build outputs, but they
+# are the whole point of the deployment.

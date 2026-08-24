@@ -1,0 +1,15 @@
+{
+  "source": "geo_cohort",
+  "cohort": "GSE41169",
+  "samples": 95,
+  "age_min": 18.0,
+  "age_max": 65.0,
+  "age_mean": 31.568421052631578,
+  "cpgs": 10759,
+  "strata": {
+    "unassigned": 6809,
+    "stochastic": 2240,
+    "cgi_hyper": 1228,
+    "pmd_hypo": 482
+  }
+}

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Longevity AI Loop</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>What's your <em>real</em> age?</h1>
+      <p>And when are you gonna die? Answered against <b>biolearn</b> bio-evals</p>
+    </div>
+  </div>
+  <div class="pipeline" id="pipeline">
+    <span data-step="input">Input</span><i></i>
+    <span data-step="agent">Agent</span><i></i>
+    <span data-step="hypothesis">Hypothesis</span><i></i>
+    <span data-step="eval">Biolearn eval</span><i></i>
+    <span data-step="score">Score</span><i></i>
+    <span data-step="store">Store</span><i class="loopback"></i>
+  </div>
+  <button id="connectBtn" class="connect-btn">
+    <span class="dot" id="connectDot"></span><span id="connectLabel">Connect agent</span>
+  </button>
+</header>
+
+<main>
+  <!-- ------------------------------------------------------ input ---- -->
+  <aside class="panel input">
+    <div class="agent-card" id="agentCard">
+      <div class="agent-head">
+        <b>Fill this in from Claude Code or Codex</b>
+        <button type="button" id="agentCardBtn">Connect</button>
+      </div>
+      <p>Connect over MCP and let your agent read your health data, push the
+         profile here and run the loop. Or just enter an age below.</p>
+      <div id="agentStatus" class="agent-status" hidden></div>
+    </div>
+
+    <form id="form">
+      <fieldset>
+        <legend>Subject</legend>
+        <div class="grid2">
+          <label>Age<input name="age" type="number" min="20" max="95" step="any" value="54" required></label>
+          <label>Sex
+            <select name="sex"><option value="1">Male</option><option value="0">Female</option></select>
+          </label>
+        </div>
+        <div class="grid2">
+          <label>BMI<input name="bmi" type="number" min="15" max="55" step="any" value="30.5"></label>
+          <label>Smoking
+            <select name="smoking_status">
+              <option value="never">Never</option>
+              <option value="former" selected>Former</option>
+              <option value="current">Current</option>
+            </select>
+          </label>
+        </div>
+        <div class="grid2">
+          <label>Exercise <small>min/wk</small><input name="exercise_minutes_per_week" type="number" min="0" max="900" step="any" value="60"></label>
+          <label>Sleep <small>h/night</small><input name="sleep_hours" type="number" min="3" max="11" step="any" value="6"></label>
+        </div>
+      </fieldset>
+
+      <details id="moreDetail">
+        <summary>Add detail <small>sharpens the estimate</small></summary>
+        <fieldset>
+          <legend>Lifestyle</legend>
+          <div class="grid2">
+            <label>Pack-years<input name="pack_years" type="number" min="0" max="80" step="any" value="14"></label>
+            <label>Alcohol <small>u/wk</small><input name="alcohol_units_per_week" type="number" min="0" max="60" step="any" value="12"></label>
+          </div>
+          <label>Stress <span class="hint" data-for="stress_level">7</span>
+            <input name="stress_level" type="range" min="1" max="10" step="1" value="7">
+          </label>
+          <label>Diet quality <span class="hint" data-for="diet_quality">4</span>
+            <input name="diet_quality" type="range" min="1" max="10" step="1" value="4">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Blood panel <small>all nine enable the clinical PhenoAge</small></legend>
+          <div class="grid2">
+            <label>Glucose <small>mg/dL</small><input name="glucose" type="number" step="any" value="104"></label>
+            <label>hs-CRP <small>mg/L</small><input name="c_reactive_protein" type="number" step="any" value="3.1"></label>
+            <label>Albumin <small>g/L</small><input name="albumin" type="number" step="any" value="42"></label>
+            <label>Creatinine <small>mg/dL</small><input name="creatinine" type="number" step="any" value="0.95"></label>
+            <label>Lymphocyte <small>%</small><input name="lymphocyte_percent" type="number" step="any" value="28"></label>
+            <label>MCV <small>fL</small><input name="mean_cell_volume" type="number" step="any" value="90"></label>
+            <label>RDW <small>%</small><input name="red_blood_cell_distribution_width" type="number" step="any" value="13.4"></label>
+            <label>Alk phos <small>U/L</small><input name="alkaline_phosphate" type="number" step="any" value="72"></label>
+            <label>WBC <small>10<sup>9</sup>/L</small><input name="white_blood_cell_count" type="number" step="any" value="7.2"></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Loop</legend>
+          <label>Iterations <span class="hint" data-for="iterations">12</span>
+            <input name="iterations" type="range" min="4" max="30" step="1" value="12">
+          </label>
+          <label>Hypothesis agent
+            <select name="backend" id="backend"><option value="auto">Auto</option></select>
+          </label>
+          <p class="note" id="backend-note"></p>
+        </fieldset>
+      </details>
+
+      <button type="submit" id="runBtn">Run the loop</button>
+      <div class="presets" id="presets"></div>
+      <div class="badges" id="badges"></div>
+    </form>
+  </aside>
+
+  <!-- ------------------------------------------------------ stage ---- -->
+  <section class="stage">
+    <nav class="tabs" id="tabs">
+      <button data-tab="loop" class="active">Loop</button>
+      <button data-tab="report">Report</button>
+      <button data-tab="harness">Eval harness</button>
+    </nav>
+
+    <!-- LOOP ------------------------------------------------------- -->
+    <div class="tab" id="tab-loop">
+      <div class="empty hero" id="loopEmpty">
+        <h3>Two questions.</h3>
+        <ol class="hero-q">
+          <li><b>When are you gonna die?</b><span>On the trajectory you are
+              actually on right now.</span></li>
+          <li><b>And when, if you do something about it?</b><span>After the loop
+              searches for the intervention that moves that date furthest.</span></li>
+        </ol>
+        <p>Put in an age and hit run, or connect your agent and let it fill the
+           rest in. Both answers are cohort projections with a wide band, not a
+           date in your calendar.</p>
+      </div>
+
+      <div id="loopLive" hidden>
+        <div id="lifespanNow"></div>
+        <div class="cards" id="baselineCards"></div>
+
+        <div class="split">
+          <div class="card chart-card">
+            <h3>Reward per iteration <small>running best in green</small></h3>
+            <svg id="rewardChart" viewBox="0 0 640 220" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="card">
+            <h3>Measured burden by mechanism axis <small>negative means ahead of a neutral peer</small></h3>
+            <div id="loadBars" class="bars"></div>
+          </div>
+        </div>
+
+        <div class="statusline" id="statusline"></div>
+        <div id="iterations" class="iterations"></div>
+      </div>
+    </div>
+
+    <!-- REPORT ----------------------------------------------------- -->
+    <div class="tab" id="tab-report" hidden>
+      <div class="empty" id="reportEmpty">
+        <h3>No report yet</h3>
+        <p>The report is written when the loop finishes.</p>
+      </div>
+      <div id="reportBody" hidden></div>
+    </div>
+
+    <!-- HARNESS ---------------------------------------------------- -->
+    <div class="tab" id="tab-harness" hidden>
+      <div id="harnessBody"></div>
+    </div>
+  </section>
+</main>
+
+<!-- ------------------------------------------------------- modal ---- -->
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-label="Connect an agent">
+    <div class="modal-head">
+      <h2>Connect an agent over MCP</h2>
+      <button type="button" id="closeModal" aria-label="Close">&times;</button>
+    </div>
+    <p class="modal-intro">
+      This app runs its own MCP server. Point Claude Code or Codex at it and
+      your agent can read your health data from wherever it lives, push the
+      profile into this page and run the loop, with results streaming back here.
+    </p>
+    <nav class="tabs small" id="clientTabs"></nav>
+    <div id="clientBody"></div>
+    <div class="modal-foot">
+      <div>
+        <div class="sub">Tools exposed</div>
+        <div class="chips" id="mcpTools"></div>
+      </div>
+      <div class="live" id="mcpLive">
+        <span class="dot" id="modalDot"></span><span id="modalStatus">Waiting for a client</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
