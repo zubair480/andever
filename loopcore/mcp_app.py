@@ -68,9 +68,40 @@ Normal flow:
 3. `run_longevity_loop`. The browser streams the run live while you wait."""
 
 
+def _transport_security():
+    """Allow the public hostname through the SDK's DNS-rebinding check.
+
+    The MCP SDK ships with enable_dns_rebinding_protection on and an EMPTY host
+    allowlist, which passes on localhost and returns 421 Misdirected Request for
+    every real domain. LONGEVITY_LOOP_ALLOWED_HOSTS is a comma separated list;
+    on Render, RENDER_EXTERNAL_HOSTNAME is set for us. With neither set the
+    protection stays fully on, which is the right default for a local run.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    hosts = [h.strip() for h in
+             os.environ.get("LONGEVITY_LOOP_ALLOWED_HOSTS", "").split(",")
+             if h.strip()]
+    render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+    if render_host:
+        hosts.append(render_host)
+    if not hosts:
+        return None
+
+    # A host entry has to cover the port-qualified form too, and each host needs
+    # a matching origin or a browser-issued request is refused separately.
+    allowed = []
+    for host in hosts:
+        allowed += [host, f"{host}:443", f"{host}:80"]
+    origins = [f"https://{h}" for h in hosts] + [f"http://{h}" for h in hosts]
+    return TransportSecuritySettings(allowed_hosts=allowed,
+                                     allowed_origins=origins)
+
+
 mcp = FastMCP(SERVER_NAME,
               instructions=INSTRUCTIONS_HOSTED if HOSTED else INSTRUCTIONS_LOCAL,
-              stateless_http=True)
+              stateless_http=True,
+              transport_security=_transport_security())
 
 
 PROFILE_DOC = [
