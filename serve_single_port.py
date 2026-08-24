@@ -94,6 +94,30 @@ async def connection(request):
     return _json(session.snapshot())
 
 
+async def mirror_open(request):
+    """Register this browser tab so an agent can stream a run into it."""
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    code = str(payload.get("code", "")).strip().upper()
+    if not code.isalnum() or not 4 <= len(code) <= 12:
+        return _json(dict(error="code must be 4 to 12 alphanumeric characters"),
+                     status=400)
+    session.open_mirror(code)
+    return _json(dict(code=code, open=True))
+
+
+async def mirror_poll(request):
+    """Events an agent has streamed into this tab's mirror since `since`."""
+    code = str(request.path_params["code"]).strip().upper()
+    try:
+        since = int(request.query_params.get("since", 0))
+    except (TypeError, ValueError):
+        since = 0
+    return _json(session.mirror_poll(code, since))
+
+
 async def mcp_setup(request):
     """Connection instructions, pointing at /mcp on this same origin.
 
@@ -209,6 +233,8 @@ app.router.routes.extend([
     Route("/", index),
     Route("/index.html", index),
     Route("/api/meta", meta),
+    Route("/api/mirror", mirror_open, methods=["POST"]),
+    Route("/api/mirror/{code}", mirror_poll),
     Route("/api/connection", connection),
     Route("/api/mcp-setup", mcp_setup),
     Route("/api/runs", runs),

@@ -211,13 +211,20 @@ prediction about this person. Nothing here is medical advice.
 """
 
 
-def _run_now(profile, iterations):
-    """Run the loop synchronously in this process, storing nothing."""
+def _run_now(profile, iterations, mirror_code=None):
+    """Run the loop synchronously in this process, storing nothing.
+
+    When a mirror code is open, each loop event is copied to it so the browser
+    can render the run as it happens. Events carry no more than what the caller
+    already supplied.
+    """
     from . import looprunner, memstore
 
+    emit = ((lambda event: session.mirror_event(mirror_code, event))
+            if mirror_code else (lambda event: None))
     sink = memstore.MemoryStore()
     report = looprunner.run(profile, iterations=iterations, backend="auto",
-                            sink=sink)
+                            sink=sink, emit=emit)
     return report, sink.exported
 
 
@@ -264,17 +271,33 @@ if HOSTED:
         alkaline_phosphate: float | None = None,
         white_blood_cell_count: float | None = None,
         iterations: int = DEFAULT_ITERATIONS,
+        mirror_code: str | None = None,
     ) -> str:
         """Project a lifespan and search for the protocol that extends it most.
 
         Single-shot: pass everything you know about the person and get both
         numbers back. Only age and sex are required. Nothing is stored.
+
+        Pass `mirror_code` to watch the loop run live in an open browser tab.
+        The tab shows its own code; without one the run is not mirrored
+        anywhere, which is the default because one server serves everyone.
         """
         profile = _profile(locals())
-        profile.pop("iterations", None)
+        for key in ("iterations", "mirror_code"):
+            profile.pop(key, None)
         iterations = max(4, min(int(iterations), MAX_ITERATIONS))
-        report, training = _run_now(profile, iterations)
-        return _summarise(report, report.get("run_id", "hosted"), training)
+
+        code = (mirror_code or "").strip().upper() or None
+        if code:
+            session.mirror_note_call(code, "run_longevity_loop")
+
+        report, training = _run_now(profile, iterations, mirror_code=code)
+        summary = _summarise(report, report.get("run_id", "hosted"), training)
+        if code and not session.mirror_exists(code):
+            summary += (f"\nNote: mirror code {code} is not open, so this run "
+                        f"was not shown in a browser. Check the code in the "
+                        f"page's Connect panel.")
+        return summary
 
 else:
 

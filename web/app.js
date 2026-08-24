@@ -26,7 +26,8 @@ const state = {
   history: [], lastProfileAt: null, connected: false, attachedRunId: null,
   // The hosted build is stateless: the loop streams out of the POST that
   // starts it, there is no run to attach to later and no shared session.
-  hosted: false,
+  hosted: false, mirror: null, mirrorCursor: 0, mirrorCalls: 0,
+  mirrorRunning: false,
 };
 
 /* ------------------------------------------------------------ presets */
@@ -106,6 +107,90 @@ function applyHostedMode() {
     "Point Claude Code, Codex or any MCP client at this URL and ask it about "
     + "your longevity. It reads your health data from wherever it lives and "
     + "calls the loop. Nothing you send is stored.";
+  openMirror();
+}
+
+/* One server serves everyone here, so an agent's run is only shown in the tab
+   that asked for it. The tab picks a code, the agent passes the same code, and
+   nothing is mirrored to anyone who did not opt in. */
+function mirrorCode() {
+  let code = null;
+  try { code = localStorage.getItem("longevityMirror"); } catch (_) {}
+  if (!code || !/^[A-Z0-9]{6}$/.test(code)) {
+    const pool = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // no I/O/0/1
+    const bytes = new Uint8Array(6);
+    crypto.getRandomValues(bytes);
+    code = [...bytes].map((b) => pool[b % pool.length]).join("");
+    try { localStorage.setItem("longevityMirror", code); } catch (_) {}
+  }
+  return code;
+}
+
+async function openMirror() {
+  state.mirror = mirrorCode();
+  try {
+    await fetch("/api/mirror", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: state.mirror }),
+    });
+  } catch (_) { return; }
+
+  renderMirrorCode();
+  // Re-register periodically: the server expires idle mirrors, and the tab
+  // should keep its slot for as long as it is actually being watched.
+  setInterval(() => {
+    if (document.visibilityState === "visible") pollMirror();
+  }, 2000);
+  pollMirror();
+}
+
+function renderMirrorCode() {
+  const status = $("#agentStatus");
+  status.hidden = false;
+  status.innerHTML =
+    `Your mirror code is <b>${esc(state.mirror)}</b>`
+    + `<div>Ask your agent to run the loop with mirror code `
+    + `<b>${esc(state.mirror)}</b> and it will play out here.</div>`;
+}
+
+async function pollMirror() {
+  if (!state.mirror) return;
+  let snap;
+  try {
+    snap = await (await fetch(
+      `/api/mirror/${state.mirror}?since=${state.mirrorCursor || 0}`)).json();
+  } catch (_) { return; }
+
+  if (!snap.known) {            // the server expired us; claim the slot again
+    try {
+      await fetch("/api/mirror", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: state.mirror }),
+      });
+    } catch (_) {}
+    return;
+  }
+
+  if (snap.calls && snap.calls !== state.mirrorCalls) {
+    state.mirrorCalls = snap.calls;
+    $("#connectDot").classList.add("live");
+    $("#connectBtn").classList.add("live");
+    $("#connectLabel").textContent = "Agent connected";
+  }
+
+  if (!snap.events.length) return;
+  state.mirrorCursor = snap.cursor;
+  if (!state.mirrorRunning) {
+    state.mirrorRunning = true;
+    prepareStage();
+    $("#runBtn").textContent = "Agent is running";
+  }
+  snap.events.forEach(handle);
+  if (snap.events.some((e) => e.type === "complete")) {
+    state.mirrorRunning = false;
+    resetButton();
+  }
 }
 
 function bindTabs() {

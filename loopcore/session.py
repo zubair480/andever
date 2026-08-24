@@ -90,3 +90,87 @@ def snapshot():
             last_run_id=_STATE["last_run_id"],
             log=list(_STATE["log"]),
         )
+
+
+# ---------------------------------------------------------------------------
+# Mirrors
+# ---------------------------------------------------------------------------
+# A shared instance cannot use the single module-wide profile slot to show an
+# agent's work in the browser: one process serves everyone, so a second visitor
+# would see the first one's data. A mirror is that slot made per-session. The
+# browser generates a code, shows it, and an agent that passes the same code
+# gets its run streamed to that one page. No code means no mirroring, which is
+# the safe default for anyone who does not opt in.
+
+_MIRRORS = {}
+_MIRROR_TTL = 45 * 60          # a browser tab left open all day is not a claim
+_MIRROR_LIMIT = 64             # bounded so a stranger cannot grow this forever
+
+
+def _sweep_mirrors(now):
+    stale = [code for code, m in _MIRRORS.items() if now - m["seen"] > _MIRROR_TTL]
+    for code in stale:
+        _MIRRORS.pop(code, None)
+    while len(_MIRRORS) > _MIRROR_LIMIT:
+        oldest = min(_MIRRORS, key=lambda c: _MIRRORS[c]["seen"])
+        _MIRRORS.pop(oldest, None)
+
+
+def open_mirror(code):
+    """Register a browser session so an agent can stream into it."""
+    now = time.time()
+    with _LOCK:
+        _sweep_mirrors(now)
+        entry = _MIRRORS.get(code)
+        if entry is None:
+            entry = _MIRRORS[code] = dict(events=[], created=now, seen=now,
+                                          calls=0)
+        entry["seen"] = now
+    return code
+
+
+def mirror_exists(code):
+    with _LOCK:
+        return code in _MIRRORS
+
+
+def mirror_event(code, event):
+    """Append one loop event to a mirror. False when nobody is listening."""
+    if not code:
+        return False
+    now = time.time()
+    with _LOCK:
+        entry = _MIRRORS.get(code)
+        if entry is None:
+            return False
+        entry["events"].append(event)
+        entry["seen"] = now
+        # A run is a few hundred events; keep the tail so a tab that reconnects
+        # still sees the end of it without letting this grow without bound.
+        del entry["events"][:-400]
+        return True
+
+
+def mirror_note_call(code, tool):
+    with _LOCK:
+        entry = _MIRRORS.get(code)
+        if entry is None:
+            return False
+        entry["calls"] += 1
+        entry["seen"] = time.time()
+        entry["last_tool"] = tool
+        return True
+
+
+def mirror_poll(code, since=0):
+    """Events after ``since`` for one mirror, plus how many there are now."""
+    now = time.time()
+    with _LOCK:
+        entry = _MIRRORS.get(code)
+        if entry is None:
+            return dict(known=False, events=[], cursor=0, calls=0)
+        entry["seen"] = now
+        events = entry["events"][int(since):]
+        return dict(known=True, events=list(events),
+                    cursor=len(entry["events"]), calls=entry["calls"],
+                    last_tool=entry.get("last_tool"))
