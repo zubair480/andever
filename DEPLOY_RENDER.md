@@ -1,7 +1,7 @@
 # Deploying to Render (free tier)
 
 Render's free web service runs the interface and the MCP endpoint from one
-port, which is the same shape the Hugging Face build uses. The difference is
+port. The difference is
 that Render has no image build, so `render.yaml` and `requirements.txt`
 are the whole configuration.
 
@@ -163,9 +163,8 @@ would work.
 
 ### What actually streams
 
-The premise that this app streams out of `POST /api/run` is true of the Vercel
-build and not of this one. `web/app.js` branches on `state.meta.hosted`, which
-only `api/index.py` sets. On Render you get the other path:
+This app does not stream out of `POST /api/run`. That endpoint returns a
+`run_id` in milliseconds and the stream is a separate request:
 
 | Request | Shape | Duration |
 |---|---|---|

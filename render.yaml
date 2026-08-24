@@ -16,7 +16,7 @@ services:
   - type: web
     name: longevity-loop
 
-    # Native Python runtime. `docker` would work too and the Dockerfile in this
+    # Native Python runtime. There is no Dockerfile in this
     # repo is a valid one, but the image it builds carries torch and scipy and
     # is far too large for a free instance to build or hold in 512 MB.
     runtime: python
@@ -86,6 +86,11 @@ services:
       # so pointing it at /tmp is both the writable choice and an honest
       # statement of what it is: scratch space that dies with the process.
       # Nothing here survives a spin-down, a redeploy or a restart.
+      # One process serves everyone, so the MCP surface must not hold a pending
+      # profile between calls: two people at once would share it. This switches
+      # to a single tool that takes the whole profile per call and keeps nothing.
+      - key: LONGEVITY_LOOP_SHARED
+        value: "1"
       - key: LONGEVITY_LOOP_RUNTIME
         value: /tmp/longevity-runtime
 
