@@ -1,94 +1,25 @@
-# Dependency set for the Render free instance: 512 MB RAM, 0.1 vCPU, no disk.
+# Runtime dependencies for the Render web service.
 #
-# The constraint that shapes this file is not disk size, the way it was on
-# Vercel. It is build memory. A free instance builds inside the same 512 MB it
-# runs in, and `pip install torch` alone unpacks well past that before it ever
-# finishes. So the rule here is simpler than the Vercel one: nothing that needs
-# to compile, and nothing with a wheel measured in hundreds of megabytes.
+# biolearn, torch, scipy, scikit-learn and cvxpy are deliberately ABSENT. The
+# eval panel is precomputed into loopcore/precomputed/fastpanel.npz and the
+# mechanism axes into axes.npz, both built by tools/ against biolearn on a
+# development machine. All twelve clocks match biolearn to float64 rounding.
+# That is what takes the service from 803 MB and 9.5 s per run down to 88 MB
+# and 0.08 s, which is the difference between fitting a free 512 MB instance
+# and not.
 #
-# WHY EACH LINE IS HERE
+# To rebuild those artefacts you need the full stack: see requirements-local.txt.
 #
-#   numpy      the evaluator. loopcore/fastpanel.py loads the clock
-#              coefficients out of loopcore/precomputed/fastpanel.npz and every
-#              panel model is a dot product against them, so numpy is not a
-#              helper here, it is the whole eval path.
-#   pandas     loopcore carries the methylome as a DataFrame indexed by CpG,
-#              and the panel tables, the reference epigenome and the axis CpG
-#              sets are all joined on that index.
-#   mcp        the MCP server. mcp_app.mcp.streamable_http_app() is the ASGI
-#              app that serve_single_port.py extends, so this is what actually
-#              gets served, not an add-on to it.
-#   starlette  routing and responses for the interface and /api/*. Also comes
-#              in under mcp, pinned here because this repo imports it directly
-#              and should say so.
-#   uvicorn    the ASGI server named in render.yaml's startCommand. The Vercel
-#              requirements.txt omits it because Vercel supplies its own
-#              runtime; Render does not, so it has to be listed.
-#
-#              [standard] pulls uvloop and httptools. On 0.1 vCPU the pure
-#              Python asyncio loop and h11's byte-at-a-time HTTP parsing are a
-#              real cost, and both extras have manylinux wheels for the pinned
-#              Python. If a wheel is ever missing for a version you bump to,
-#              drop the extra: plain `uvicorn` serves the same app, slower.
-#
-# WHAT IS DELIBERATELY ABSENT
-#
-#   biolearn   not installed, not vendored. Listing it makes pip resolve its
-#              declared dependencies whatever you intend to do with them, which
-#              is how the Vercel bundle hit 512 MB. loopcore/fastpanel.py
-#              replaces the model_gallery call path with the precomputed
-#              coefficients, so nothing imports it at runtime.
-#   torch      biolearn imports it at module load for AltumAge, which is one
-#              model in a twelve model panel. The CPU wheel is over 200 MB
-#              installed and it is the single biggest reason a free build dies.
-#   scipy      wanted for exactly one function, scipy.stats.rankdata, which
-#              DunedinPACE uses to quantile-normalise against its gold
-#              standard. That is thirty lines of numpy.
-#   sklearn    wanted for exactly one class, LinearRegression, which GrimAge
-#              uses to regress DNAmGrimAge on age for AgeAccelGrim. A closed
-#              form least squares fit in numpy is the same answer.
-#   cvxpy      declared by biolearn, never imported by it, and it drags ecos in
-#              behind it, which has no wheel for recent Python and needs a C++
-#              toolchain that a free instance does not have.
-#   matplotlib
-#   seaborn    only needed because biolearn's data_library imports them at
-#              module load. No biolearn, no reason.
-#   anthropic  optional. It only lights up the Claude-backed hypothesis agent
-#              when ANTHROPIC_API_KEY is set, and the built-in optimiser runs
-#              without it. Add it below if you set the key.
-#
-# ADJUSTING THIS FILE
-#
-# If loopcore/fastpanel.py is not in place yet, the import chain still runs
-# through loopcore/panels.py, which does `from biolearn.util import get_data_file`
-# at module load. The app will not boot on this file alone in that state. The
-# stopgap is the commented block at the bottom: it installs biolearn without
-# dependency resolution plus only what biolearn genuinely imports. It is
-# heavier and slower to build, and it is the thing fastpanel exists to delete.
+# UPPER BOUNDS ARE NOT DECORATION. A fresh resolve on Render pulled mcp 2.0.0,
+# which moved mcp.server.fastmcp and crashed the service on import. pandas 3 and
+# numpy 3 are majors this code has never been run against, so they are capped
+# too. Raise a bound only after testing against that major.
 
-numpy>=1.19.0
-pandas>=2.1.0
+numpy>=1.19.0,<3
+pandas>=2.1.0,<3
 
-mcp>=1.27.0
+# The MCP server and the ASGI stack that serves it alongside the interface.
+# mcp 2.x reorganised the package; FastMCP lives elsewhere there.
+mcp>=1.27.0,<2
 starlette
 uvicorn[standard]
-
-# ---------------------------------------------------------------------------
-# Stopgap, only until loopcore/fastpanel.py lands. Uncomment all four lines.
-#
-# --no-deps on the biolearn line is load bearing: without it pip resolves
-# torch, scipy, scikit-learn and cvxpy and the build runs out of memory. The
-# three below it are what biolearn actually imports at runtime, and appdirs is
-# how it resolves the cache directory that XDG_CACHE_HOME redirects to /tmp.
-#
-# --no-deps biolearn==0.9.1
-# appdirs
-# pyyaml
-# requests
-#
-# Note that this path also needs matplotlib, since biolearn's data_library
-# imports it at module load and bioevals builds a GeoData out of that module on
-# every scored hypothesis. That is another 60 MB, and it is close to the edge of
-# what a free build will survive. Treat it as a way to see the app run, not as a
-# configuration to leave deployed.
-# ---------------------------------------------------------------------------
