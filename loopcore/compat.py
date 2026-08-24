@@ -13,23 +13,17 @@ import warnings
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 
-SLIM = os.environ.get("LONGEVITY_LOOP_SLIM") == "1"
+# biolearn imports torch at module load, and on Windows it must win the race
+# for the OpenMP runtime or the interpreter dies with an access violation. The
+# deployed service never imports biolearn at all, so torch being absent there is
+# expected rather than a problem.
+try:
+    import torch  # noqa: F401
 
-if SLIM:
-    # Size-capped host: register stand-ins for torch/cvxpy/scipy/sklearn before
-    # biolearn can import the real ones. See loopcore/slim.py.
-    from . import slim as _slim
-
-    _slim.install()
+    TORCH_OK = True
+except Exception:
     TORCH_OK = False
-else:
-    try:  # torch must win the race for the OpenMP runtime
-        import torch  # noqa: F401
 
-        TORCH_OK = True
-    except Exception as exc:  # pragma: no cover - depends on local install
-        TORCH_OK = False
-        warnings.warn(f"torch unavailable ({exc}); AltumAge will be skipped")
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")

@@ -1,23 +1,20 @@
 """Entry point for hosts that expose exactly one port.
 
-    python serve_single_port.py --host 0.0.0.0 --port 7860
+    python serve_single_port.py --host 0.0.0.0 --port $PORT
 
 ``run.py`` binds two sockets: the interface on PORT and the MCP endpoint on
-PORT+1. Container hosts route a single port into the container -- Hugging Face
-Spaces routes whatever ``app_port`` says and nothing else -- so on those the
-MCP endpoint is simply unreachable. This serves both from one port by adding
-the interface routes to FastMCP's own streamable-HTTP app, which is the shape
-``api/index.py`` already uses on Vercel.
+PORT+1. A platform routes one port into the service, so on those the MCP
+endpoint would simply be unreachable. This serves both from one port by adding
+the interface routes to FastMCP's own streamable-HTTP app.
 
-The difference from the Vercel build is that this one stays stateful. Runs live
-in this process, so an agent calling ``set_subject_profile`` still fills the
-form in the open browser tab and ``run_longevity_loop`` still streams into it,
-exactly as it does locally. ``run.py`` is untouched and remains the way to run
-this on your own machine.
+This is what Render runs. ``run.py`` is untouched and remains the way to run
+this on your own machine, where two ports are not a problem.
 
-One caveat worth knowing before pointing the public at it: the stateful session
-is process-wide, so two people using the same instance at the same time share
-one pending profile. That is fine for a demo and wrong for a service.
+One caveat before pointing the public at it: the stateful session is
+process-wide, so two people using the same instance at the same time share one
+pending profile. Set LONGEVITY_LOOP_SHARED=1 to switch the MCP surface to a
+single-shot tool that takes the whole profile per call and keeps no state,
+which is the right shape for a public endpoint.
 """
 
 import argparse

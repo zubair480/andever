@@ -17,6 +17,33 @@ from . import bioevals, evidence, mortality, panels
 ASSAY_NOISE_YEARS = 1.6
 
 
+# Transcribed from biolearn.hematology.phenotypic_age rather than imported, so
+# the deployed service needs no biolearn. It is a closed form from Levine 2018
+# and the numbers are checked against biolearn in tools/check_phenoage.py.
+_PHENO_COEF = {
+    "age": 0.0804, "albumin": -0.034, "creatinine": 0.0095, "glucose": 0.1953,
+    "lymphocyte_percent": -0.012, "mean_cell_volume": 0.0268,
+    "red_blood_cell_distribution_width": 0.3356, "alkaline_phosphate": 0.00188,
+    "white_blood_cell_count": 0.0554,
+}
+_PHENO_CONSTANT = -19.9067
+_PHENO_GAMMA = 0.0077
+_PHENO_CS = (141.50225, -0.00553, 0.090165)
+
+
+def _phenotypic_age(row):
+    """Levine phenotypic age from one row of SI-unit blood chemistry."""
+    linear = sum(row[field] * weight for field, weight in _PHENO_COEF.items())
+    # C-reactive protein enters as a log, which is why it is not in the table.
+    linear += np.log(row["c_reactive_protein"]) * 0.0954
+
+    mortality = 1 - np.exp(
+        -np.exp(_PHENO_CONSTANT + linear)
+        * ((np.exp(120 * _PHENO_GAMMA) - 1) / _PHENO_GAMMA))
+    a, b, c = _PHENO_CS
+    return float(a + np.log(b * np.log(1.00001 - mortality)) / c)
+
+
 def clinical_phenoage(profile):
     """Levine phenotypic age from blood chemistry, straight out of biolearn.
 
@@ -26,9 +53,6 @@ def clinical_phenoage(profile):
 
     Returns ``None`` when the profile does not carry a full blood panel.
     """
-    import pandas as pd
-    from biolearn.hematology import phenotypic_age
-
     needed = ["albumin", "creatinine", "glucose", "c_reactive_protein",
               "lymphocyte_percent", "mean_cell_volume",
               "red_blood_cell_distribution_width", "alkaline_phosphate",
@@ -51,7 +75,7 @@ def clinical_phenoage(profile):
             "alkaline_phosphate": float(profile["alkaline_phosphate"]),  # U/L
             "white_blood_cell_count": float(profile["white_blood_cell_count"]),
         }
-        value = float(phenotypic_age(pd.DataFrame([row])).iloc[0])
+        value = _phenotypic_age(row)
     except Exception:
         return None
     if not np.isfinite(value) or not 10.0 <= value <= 130.0:
