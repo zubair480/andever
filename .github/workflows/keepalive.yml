@@ -1,0 +1,53 @@
+# Keep the Render free instance awake during waking hours.
+#
+# A free instance sleeps after 15 minutes idle and takes about 50 seconds to
+# wake. That is long enough that an MCP client looks like it has hung on the
+# first tool call, which is the worst possible first impression for someone you
+# just handed the URL to.
+#
+# The budget is the reason this does not simply run all day. Render allows 750
+# instance-hours a month and a month is about 744 hours, so keeping it awake
+# around the clock would consume essentially the whole allowance and suspend the
+# service if anything overran. Pinging only between 05:00 and 21:00 Pacific is
+# roughly 16 hours a day, near 500 hours a month, which leaves real margin for
+# organic traffic and redeploys.
+#
+# GitHub disables scheduled workflows on a repository with no activity for 60
+# days. If the service starts feeling slow again, check whether this is still
+# enabled before assuming something broke.
+
+name: keepalive
+
+on:
+  schedule:
+    # Every 10 minutes from 12:00 to 04:59 UTC, which is 05:00 to 21:59 Pacific.
+    - cron: "*/10 12-23,0-4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wake the service
+        run: |
+          # A cold instance can take well over 50 seconds, so allow generously
+          # and retry rather than failing the run on one slow wake.
+          for attempt in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+                        --max-time 120 https://andever.onrender.com/api/connection || echo 000)
+            echo "attempt $attempt -> $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "service did not answer after 3 attempts"
+          exit 1
